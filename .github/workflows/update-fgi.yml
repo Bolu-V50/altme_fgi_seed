@@ -1,0 +1,41 @@
+name: Update FGI CSV
+on:
+  schedule:
+    - cron: '0 8 * * *'   # 每天 08:00 UTC 自动运行
+  workflow_dispatch:       # 允许你手动立即运行
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch FGI and write CSV
+        run: |
+          python - <<'PY'
+          import csv, json, time, urllib.request, os
+          # 从 alternative.me 获取全部历史 FGI（JSON）
+          url = "https://api.alternative.me/fng/?limit=0&format=json"
+          with urllib.request.urlopen(url, timeout=30) as r:
+            data = json.load(r)
+          rows = []
+          for it in data["data"]:
+            # timestamp 为秒，这里转成毫秒（TradingView 标准）
+            ts_ms = int(it["timestamp"]) * 1000
+            v = float(it["value"])
+            rows.append([ts_ms, v, v, v, v, 0])
+          rows.sort(key=lambda x: x[0])  # 按时间升序
+          os.makedirs("data", exist_ok=True)
+          with open("data/fgi_daily.csv","w",newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["time","open","high","low","close","volume"])
+            w.writerows(rows)
+          PY
+
+      - name: Commit updated CSV
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/fgi_daily.csv
+          git commit -m "Update FGI CSV" || echo "No changes"
+          git push
